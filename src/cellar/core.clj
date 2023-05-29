@@ -1,28 +1,8 @@
 (ns cellar.core
-  (:require [clojure.java.jdbc :as jdbc]
+  (:require [clojure.test :as test]
             [clojure.string :as str]
-            [clojure.test :as test]
-            [clojure.pprint :as p]))
-
-(declare ^:dynamic *config*)
-
-(def default {:tables      {}
-              :db-settings {}})
-
-(defn set-config! [new-config] (alter-var-root #'*config* (fn [_old] new-config)))
-
-(defn set-db-setting! [new-db-settings] (set-config! (assoc *config* :db-settings new-db-settings)))
-
-(defn reset-config! [] (set-config! default))
-
-(defonce ^:dynamic *config* default)
-
-(defn- -add-table->config!
-  [new-table]
-  (->> new-table
-       (merge (:tables *config*))
-       (assoc *config* :tables)
-       (set-config!)))
+            [clojure.java.jdbc :as jdbc]
+            [cellar.config :as cfg]))
 
 (defn- -transform
   [columns f]
@@ -45,18 +25,22 @@
 (defn- -init-table
   [table-name table]
   (jdbc/db-do-commands
-    (:db-settings *config*)
+    (cfg/<db-settings-)
     (jdbc/create-table-ddl table-name
                            (-transform (:columns table) (:transform table))
                            (if (:conditional? table)
                              {:conditional? true}
                              {}))))
 
+(defn- -where-clause
+  [kvs]
+  (str/join " AND " (map #(format "%s = ?" (name %)) (map key kvs))))
+
 (defmacro deftable
   [name & specs]
   (let [new-table (-table specs {:transform identity})
         columns (->> new-table :columns (mapv (comp symbol first)))]
-    (-add-table->config! {(keyword name) new-table})
+    (cfg/-table> {(keyword name) new-table})
     (list 'defrecord (symbol (str/capitalize name)) columns)))
 
 (comment
@@ -69,20 +53,34 @@
              [:step "VARCHAR(64)"]]))
 
 (defn init
-  ([] (let [tables (:tables *config*)]
+  ([] (let [tables (cfg/<tables-)]
         (doseq [table tables]
           (init (first table)))))
-  ([table] (-init-table table (get-in *config* [:tables table]))))
+  ([table] (-init-table table (get (cfg/<tables-) table))))
 
 (defn get
   ([table kvs]
    (get table kvs nil))
   ([table kvs limit]
-   (let [where-clause (str/join " AND " (map #(format "%s = ?" (name %)) (map key kvs)))
+   (let [where-clause (-where-clause kvs)
          where-clause (if limit (str where-clause " LIMIT " limit) where-clause)
          query (format "SELECT * FROM %s WHERE %s" (name table) where-clause)]
-     (jdbc/query (:db-settings *config*) (cons query (mapv val kvs))))))
+     (jdbc/query (cfg/<db-settings-) (cons query (mapv val kvs))))))
 
 (defn exists? [table kvs] (some? (seq (get table kvs 1))))
 
-(defn new! [table kvs] (jdbc/insert! (:db-settings *config*) table kvs))
+(defn new! [table kvs] (jdbc/insert! (cfg/<db-settings-) table kvs))
+
+(defn update!
+  [table kvs where]
+  (->> where
+       (mapv val)
+       (cons (-where-clause where))
+       (jdbc/update! (cfg/<db-settings-) table kvs)))
+
+(defn delete!
+  [table where]
+  (->> where
+       (mapv val)
+       (cons (-where-clause where))
+       (jdbc/delete! (cfg/<db-settings-) table)))
