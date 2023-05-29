@@ -1,12 +1,19 @@
 (ns cellar.core
-  (:require [clojure.test :as test]
+  (:require [cellar.config :as cfg]
             [clojure.string :as str]
-            [clojure.java.jdbc :as jdbc]
-            [cellar.config :as cfg]))
+            [clojure.java.jdbc :as jdbc]))
+
+(defn- -to
+  [column]
+  (str/replace column #"-" "_"))
+
+(defn- -from
+  [column]
+  (str/replace column #"_" "-"))
 
 (defn- -transform
   [columns f]
-  (mapv (fn [[k v]] [(f (if (keyword? k) (name k) k)) v]) columns))
+  (mapv (fn [[k v]] [(keyword (f (if (keyword? k) (name k) k))) v]) columns))
 
 (defn- -table
   ([spec]
@@ -14,8 +21,7 @@
      (keyword? spec) (if (= :conditional! spec)
                        {:conditional? true}
                        {spec true})
-     (test/function? spec) {:transform spec}
-     (coll? spec) {:columns spec}
+     (vector? spec) {:columns spec}
      :unknown spec))
   ([specs config]
    (if (empty? specs)
@@ -27,26 +33,32 @@
   (jdbc/db-do-commands
     (cfg/<db-settings-)
     (jdbc/create-table-ddl table-name
-                           (-transform (:columns table) (:transform table))
+                           (-transform (:columns table) -to)
                            (if (:conditional? table)
                              {:conditional? true}
                              {}))))
 
 (defn- -where-clause
   [kvs]
-  (str/join " AND " (map #(format "%s = ?" (name %)) (map key kvs))))
+  (str/join " AND " (map (comp #(format "%s = ?" %) -to name key) kvs)))
+
+(defn- -query
+  [table kvs limit]
+  (let [where-clause (-where-clause kvs)]
+    (format "SELECT * FROM %s WHERE %s"
+            (name table)
+            (if limit
+              (str where-clause " LIMIT " limit)
+              where-clause))))
 
 (defmacro deftable
   [name & specs]
-  (let [new-table (-table specs {:transform identity})
-        columns (->> new-table :columns (mapv (comp symbol first)))]
-    (cfg/-table> {(keyword name) new-table})
-    (list 'defrecord (symbol (str/capitalize name)) columns)))
+  (let [new-table (-table specs {})]
+    (cfg/-table> {(keyword name) new-table})))
 
 (comment
   (deftable flow
             :conditional!
-            (fn [x] (str/replace (name x) "-" "_"))
             [[:chat "BIGINT"]
              [:domain-id "VARCHAR(32)"]
              [:message "BIGINT"]
@@ -59,24 +71,35 @@
   ([table] (-init-table table (get (cfg/<tables-) table))))
 
 (defn get
+  "Returns records related to `table` using `kvs` as filter query part"
   ([table kvs]
    (get table kvs nil))
   ([table kvs limit]
-   (let [where-clause (-where-clause kvs)
-         where-clause (if limit (str where-clause " LIMIT " limit) where-clause)
-         query (format "SELECT * FROM %s WHERE %s" (name table) where-clause)]
-     (jdbc/query (cfg/<db-settings-) (cons query (mapv val kvs))))))
+   (->> kvs
+        (mapv val)
+        (cons (-query table kvs limit))
+        (jdbc/query (cfg/<db-settings-))
+        (map (comp #(into {} %) #(-transform % -from))))))
 
-(defn exists? [table kvs] (some? (seq (get table kvs 1))))
+(defn exists?
+  [table kvs]
+  (-> table
+      (get kvs 1)
+      (seq)
+      (some?)))
 
-(defn new! [table kvs] (jdbc/insert! (cfg/<db-settings-) table kvs))
+(defn insert!
+  [table kvs]
+  (jdbc/insert! (cfg/<db-settings-) table (into {} (-transform kvs -to)))
+  (get table kvs 1))
 
 (defn update!
   [table kvs where]
   (->> where
        (mapv val)
        (cons (-where-clause where))
-       (jdbc/update! (cfg/<db-settings-) table kvs)))
+       (jdbc/update! (cfg/<db-settings-) table (into {} (-transform kvs -to))))
+  (get table (merge kvs where)))
 
 (defn delete!
   [table where]
