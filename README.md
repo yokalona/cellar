@@ -1,14 +1,8 @@
-# cellar
+# Cellar
+[![Clojars Project](https://img.shields.io/clojars/v/io.github.yokalona/cellar.svg)](https://clojars.org/io.github.yokalona/cellar)
+[![Clojure CI](https://github.com/yokalona/cellar/actions/workflows/clojure.yml/badge.svg?branch=main)](https://github.com/yokalona/cellar/actions/workflows/clojure.yml)
 
-Micro ORM for small apps, that doesn't require fancy, heavy DB related work.
-Takes care of creating tables and basic CRUD queries.
-Additionally converts db names to clojure name and vice versa, like so:
-
-> domain-id
-
-will become
-
-> domain_id
+**Pico ORM**, when simple data require simple data management.
  
 ### How to? (short version)
 
