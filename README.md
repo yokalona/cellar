@@ -12,8 +12,6 @@ will become
  
 ### How to? (short version)
 
-[cellar]
-
 ```clojure
 (ns example
   (:require
@@ -60,7 +58,7 @@ will become
 There are plenty of ORM's out there, but mostly they are much larger. 
 For small, close to pet-projects, it is overkill to use anything larger, than this ORM.
 
-Manly it is designed and created for my private pet-projects.
+Mainly it is designed and created for my private pet-projects.
 
 ### What's the deal with `-foo>` and `<foo-`
 Code notations of this project:
