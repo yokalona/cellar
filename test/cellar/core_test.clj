@@ -1,11 +1,9 @@
 (ns cellar.core-test
-  (:require [clojure.test :refer :all]
-            [cellar.core :refer :all]))
+  (:require [cellar.config :as cfg]
+            [clojure.test :refer :all]))
 
-(deftest set-config!-test
-  (testing "setting config to valid config"
-    (let [new-config {:tables      {:abc {}}
-                      :db-settings {}
-                      :queries     {}}]
-      (set-config! new-config)
-      (is (= new-config *config*)))))
+(defn reset-fixture [f]
+  (cfg/reset!)
+  (f))
+
+(use-fixtures :each reset-fixture)

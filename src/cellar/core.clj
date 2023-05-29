@@ -32,7 +32,7 @@
   [table-name table]
   (jdbc/db-do-commands
     (cfg/<db-settings-)
-    (jdbc/create-table-ddl table-name
+    (jdbc/create-table-ddl (-to (name table-name))
                            (-transform (:columns table) -to)
                            (if (:conditional? table)
                              {:conditional? true}
@@ -46,7 +46,7 @@
   [table kvs limit]
   (let [where-clause (-where-clause kvs)]
     (format "SELECT * FROM %s WHERE %s"
-            (name table)
+            (-to (name table))
             (if limit
               (str where-clause " LIMIT " limit)
               where-clause))))
@@ -90,7 +90,7 @@
 
 (defn insert!
   [table kvs]
-  (jdbc/insert! (cfg/<db-settings-) table (into {} (-transform kvs -to)))
+  (jdbc/insert! (cfg/<db-settings-) (-to (name table)) (into {} (-transform kvs -to)))
   (get table kvs 1))
 
 (defn update!
@@ -98,7 +98,7 @@
   (->> where
        (mapv val)
        (cons (-where-clause where))
-       (jdbc/update! (cfg/<db-settings-) table (into {} (-transform kvs -to))))
+       (jdbc/update! (cfg/<db-settings-) (-to (name table)) (into {} (-transform kvs -to))))
   (get table (merge kvs where)))
 
 (defn delete!
@@ -106,4 +106,4 @@
   (->> where
        (mapv val)
        (cons (-where-clause where))
-       (jdbc/delete! (cfg/<db-settings-) table)))
+       (jdbc/delete! (cfg/<db-settings-) (-to (name table)))))
