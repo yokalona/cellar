@@ -60,6 +60,8 @@ Code notations of this project:
 * `-foo>` - alias for `set foo`
 * `<foo-` - alias for `get foo`
 * `-foo`  - private function
+* `foo!`  - state altering function
+* `foo!!` - heavy state altering function
 
 ###### underscore is never used!
 

@@ -1,7 +1,7 @@
 (ns cellar.core
-  (:refer-clojure :exclude [get])
   (:require [cellar.config :as cfg]
             [clojure.string :as str]
+            [aloop.core :refer :all]
             [clojure.java.jdbc :as jdbc]))
 
 (defn- -to
@@ -20,6 +20,37 @@
   [f columns]
   (mapv (fn [[k v]] [(keyword (f k)) v]) columns))
 
+(defn- -varchar
+  [spec]
+  (let [length (apply str (drop 7 spec))]
+    (if (str/blank? length)
+      "varchar"
+      (str "varchar(" length ")"))))
+
+(defn- -keyword-spec
+  [spec]
+  (str/join " " (str/split spec #"-")))
+
+(defn -type-variant
+  [spec]
+  (cond
+    (str/starts-with? spec "varchar") (-varchar spec)
+    :else (-keyword-spec spec)))
+
+(defn- -type
+  [t]
+  (if+> (keyword? t)
+        name
+        str/lower-case
+        -type-variant))
+
+(defn- -spec-map
+  [spec]
+  (mapv (fn [[k v]]
+          (if (coll? v)
+            (cons k (map -type v))
+            [k (-type v)])) spec))
+
 (defn- -table
   ([spec]
    (cond
@@ -27,6 +58,7 @@
                        {:conditional? true}
                        {spec true})
      (vector? spec) {:columns spec}
+     (map? spec) {:columns (-spec-map spec)}
      :unknown spec))
   ([specs config]
    (if (empty? specs)
@@ -66,18 +98,35 @@
   (let [new-table (-table specs {})]
     (cfg/-table> {(keyword name) new-table})))
 
-(comment
+(example
+  ;; JDBC style
   (deftable flow
             :conditional!
-            [[:chat "BIGINT"]
+            [[:chat "BIGINT" "NOT NULL"]
              [:domain-id "VARCHAR(32)"]
              [:message "BIGINT"]
-             [:step "VARCHAR(64)"]]))
+             [:step "VARCHAR(64)"]])
 
-(defn get
+  ;; More convenient way
+  (deftable flow
+            :conditional!
+            {:chat      ["BIGINT" "NOT NULL"]
+             :domain-id "VARCHAR(32)"
+             :message   "BIGINT"
+             :step      "VARCHAR(64)"})
+
+  ;; Most convenient way
+  (deftable flow
+            :conditional!
+            {:chat      [:bigint :not-null]
+             :domain-id :varchar64
+             :message   :bigint
+             :step      :varchar32}))
+
+(defn select
   "Returns records related to `table` using `kvs` as filter query part"
   ([table kvs]
-   (get table kvs nil))
+   (select table kvs nil))
   ([table kvs limit]
    (->> kvs
         (mapv val)
@@ -89,7 +138,7 @@
 (defn exists?
   [table kvs]
   (-> table
-      (get kvs 1)
+      (select kvs 1)
       (seq)
       (some?)))
 
@@ -100,6 +149,12 @@
        (into {})
        (jdbc/insert! (cfg/<db-settings-) (-to table))))
 
+(defn insert!!
+  [table kvs]
+  (with-> table
+          (insert! kvs)
+          (select kvs)))
+
 (defn update!
   [table kvs where]
   (->> where
@@ -107,12 +162,23 @@
        (cons (-where-clause where))
        (jdbc/update! (cfg/<db-settings-) (-to table) (into {} (-transform -to kvs)))))
 
+(defn update!!
+  [table kvs where]
+  (with->
+    (update! kvs where)
+    (select (merge kvs where))))
+
 (defn delete!
   [table where]
   (->> where
        (mapv val)
        (cons (-where-clause where))
        (jdbc/delete! (cfg/<db-settings-) (-to table))))
+
+(defn delete!!
+  [table where]
+  (delete! table where)
+  (vector))
 
 (defn init
   ([] (let [tables (cfg/<tables-)]
