@@ -33,9 +33,9 @@
 
 (defn -type-variant
   [spec]
-  (cond
-    (str/starts-with? spec "varchar") (-varchar spec)
-    :else (-keyword-spec spec)))
+  (condp (mix 0 1 str/starts-with?) spec
+    "varchar" (-varchar spec)
+    (-keyword-spec spec)))
 
 (defn- -type
   [t]
@@ -84,11 +84,33 @@
   [kvs]
   (str/join " AND " (map (comp #(format "%s = ?" %) -to key) kvs)))
 
-(defn- -query
+(defn- -on
+  [on]
+  (str/join ", " (map #(format "%s = %s" (name (key %)) (name (val %))) on)))
+
+(defn- -table-name
+  [table]
+  (cond
+    (map? table) (let [table (first table)] (str (-to (key table)) " AS " (-to (val table))))
+    (coll? table) (str/join ", " (map -table-name table))
+    :else (-to table)))
+
+(defn- -select
   [table kvs limit]
-  (let [where-clause (-where-clause kvs)]
+  (let [table (-table-name table)
+        [where on] (reduce
+                     (fn [[where on] x]
+                       (if (keyword? (val x))
+                         [where (merge on x)]
+                         [(merge where x) on]))
+                     [{} {}] kvs)
+        on-clause (-on on)
+        where-clause (-where-clause where)
+        where-clause (if (empty? on)
+                       where-clause
+                       (str on-clause " AND " where-clause))]
     (format "SELECT * FROM %s WHERE %s"
-            (-to table)
+            table
             (if limit
               (str where-clause " LIMIT " limit)
               where-clause))))
@@ -98,31 +120,6 @@
   (let [new-table (-table specs {})]
     (cfg/-table> {(keyword name) new-table})))
 
-(example
-  ;; JDBC style
-  (deftable flow
-            :conditional!
-            [[:chat "BIGINT" "NOT NULL"]
-             [:domain-id "VARCHAR(32)"]
-             [:message "BIGINT"]
-             [:step "VARCHAR(64)"]])
-
-  ;; More convenient way
-  (deftable flow
-            :conditional!
-            {:chat      ["BIGINT" "NOT NULL"]
-             :domain-id "VARCHAR(32)"
-             :message   "BIGINT"
-             :step      "VARCHAR(64)"})
-
-  ;; Most convenient way
-  (deftable flow
-            :conditional!
-            {:chat      [:bigint :not-null]
-             :domain-id :varchar64
-             :message   :bigint
-             :step      :varchar32}))
-
 (defn select
   "Returns records related to `table` using `kvs` as filter query part"
   ([table kvs]
@@ -130,7 +127,11 @@
   ([table kvs limit]
    (->> kvs
         (mapv val)
-        (cons (-query table kvs limit))
+        (reduce (fn [acc x] (if (keyword? x)
+                              acc
+                              (cons x acc))) [])
+        ((fn[x] (println x) x))
+        (cons (-select table kvs limit))
         (jdbc/query (cfg/<db-settings-))
         (map (comp #(into {} %)
                    #(-transform -from %))))))

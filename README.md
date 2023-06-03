@@ -26,6 +26,18 @@
              [[:id "BIGINT"]
               [:shelve-height "BIGINT"]
               [:shelve-content "VARCHAR(64)"]])
+;; OR
+(db/deftable cellar-shelves
+             :conditional!
+             {:id             "BIGINT"
+              :shelve-height  "BIGINT"
+              :shelve-content "VARCHAR(64)"})
+;; OR
+(db/deftable cellar-shelves
+             :conditional!
+             {:id             :bigint
+              :shelve-height  :bigint
+              :shelve-content :varchar64})
 
 ;; inserting new record
 (db/insert! :cellar-shelves
@@ -69,3 +81,4 @@ Code notations of this project:
 1. Add table specific columns and values transformers
 2. Batch insert/delete
 3. Fields emitting fn's
+4. Add '?', '!', '*' support
