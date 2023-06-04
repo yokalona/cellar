@@ -4,6 +4,83 @@
             [aloop.core :refer :all]
             [clojure.java.jdbc :as jdbc]))
 
+(declare -to -from -transform
+         -table -init-table
+         -select -where-clause)
+
+(defn deftable
+  [name & specs]
+  (let [new-table (-table specs {})]
+    (cfg/-table> {(keyword name) new-table})))
+
+(defn select
+  "Returns records related to `table` using `kvs` as filter query part"
+  ([table kvs]
+   (select table kvs nil))
+  ([table kvs limit]
+   (->> kvs
+        (mapv val)
+        (reduce (fn [acc x] (if (keyword? x)
+                              acc
+                              (cons x acc))) [])
+        ((fn [x] (println x) x))
+        (cons (-select table kvs limit))
+        (jdbc/query (cfg/<db-settings-))
+        (map (comp #(into {} %)
+                   #(-transform -from %))))))
+
+(defn exists?
+  [table kvs]
+  (-> table
+      (select kvs 1)
+      (seq)
+      (some?)))
+
+(defn insert!
+  [table kvs]
+  (->> kvs
+       (-transform -to)
+       (into {})
+       (jdbc/insert! (cfg/<db-settings-) (-to table))))
+
+(defn insert!!
+  [table kvs]
+  (with-> table
+          (insert! kvs)
+          (select kvs)))
+
+(defn update!
+  [table kvs where]
+  (->> where
+       (mapv val)
+       (cons (-where-clause where))
+       (jdbc/update! (cfg/<db-settings-) (-to table) (into {} (-transform -to kvs)))))
+
+(defn update!!
+  [table kvs where]
+  (with->
+    (update! kvs where)
+    (select (merge kvs where))))
+
+(defn delete!
+  [table where]
+  (->> where
+       (mapv val)
+       (cons (-where-clause where))
+       (jdbc/delete! (cfg/<db-settings-) (-to table))))
+
+(defn delete!!
+  [table where]
+  (delete! table where)
+  (vector))
+
+(defn init
+  ([] (let [tables (cfg/<tables-)]
+        (doseq [table tables]
+          (init (first table)))))
+  ([table] (->> (cfg/<table- table)
+                (-init-table table))))
+
 (defn- -to
   [column]
   (if (keyword? column)
@@ -48,7 +125,7 @@
   [spec]
   (mapv (fn [[k v]]
           (if (coll? v)
-            (cons k (map -type v))
+            (into [] (add->seq (mapv -type v) k))
             [k (-type v)])) spec))
 
 (defn- -table
@@ -114,76 +191,3 @@
             (if limit
               (str where-clause " LIMIT " limit)
               where-clause))))
-
-(defmacro deftable
-  [name & specs]
-  (let [new-table (-table specs {})]
-    (cfg/-table> {(keyword name) new-table})))
-
-(defn select
-  "Returns records related to `table` using `kvs` as filter query part"
-  ([table kvs]
-   (select table kvs nil))
-  ([table kvs limit]
-   (->> kvs
-        (mapv val)
-        (reduce (fn [acc x] (if (keyword? x)
-                              acc
-                              (cons x acc))) [])
-        ((fn[x] (println x) x))
-        (cons (-select table kvs limit))
-        (jdbc/query (cfg/<db-settings-))
-        (map (comp #(into {} %)
-                   #(-transform -from %))))))
-
-(defn exists?
-  [table kvs]
-  (-> table
-      (select kvs 1)
-      (seq)
-      (some?)))
-
-(defn insert!
-  [table kvs]
-  (->> kvs
-       (-transform -to)
-       (into {})
-       (jdbc/insert! (cfg/<db-settings-) (-to table))))
-
-(defn insert!!
-  [table kvs]
-  (with-> table
-          (insert! kvs)
-          (select kvs)))
-
-(defn update!
-  [table kvs where]
-  (->> where
-       (mapv val)
-       (cons (-where-clause where))
-       (jdbc/update! (cfg/<db-settings-) (-to table) (into {} (-transform -to kvs)))))
-
-(defn update!!
-  [table kvs where]
-  (with->
-    (update! kvs where)
-    (select (merge kvs where))))
-
-(defn delete!
-  [table where]
-  (->> where
-       (mapv val)
-       (cons (-where-clause where))
-       (jdbc/delete! (cfg/<db-settings-) (-to table))))
-
-(defn delete!!
-  [table where]
-  (delete! table where)
-  (vector))
-
-(defn init
-  ([] (let [tables (cfg/<tables-)]
-        (doseq [table tables]
-          (init (first table)))))
-  ([table] (->> (cfg/<table- table)
-                (-init-table table))))
