@@ -5,5 +5,5 @@
             :url "https://www.eclipse.org/legal/epl-2.0/"}
   :dependencies [[org.clojure/clojure "1.11.1"]
                  [org.clojure/java.jdbc "0.7.12"]
-                 [io.github.yokalona/aloop "1.1.3"]]
+                 [io.github.yokalona/aloop "1.1.5"]]
   :repl-options {:init-ns cellar.core})

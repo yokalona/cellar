@@ -18,16 +18,25 @@
   ([table kvs]
    (select table kvs nil))
   ([table kvs limit]
+   (select table kvs limit nil))
+  ([table kvs limit order-map]
    (->> kvs
         (mapv val)
         (reduce (fn [acc x] (if (keyword? x)
                               acc
-                              (cons x acc))) [])
-        ((fn [x] (println x) x))
-        (cons (-select table kvs limit))
+                              (conj acc x))) [])
+        (cons (-select table kvs limit order-map))
         (jdbc/query (cfg/<db-settings-))
         (map (comp #(into {} %)
                    #(-transform -from %))))))
+
+(defn select-first
+  ([table kvs]
+   (select-first table kvs nil))
+  ([table kvs limit]
+   (select-first table kvs limit nil))
+  ([table kvs limit order-by]
+   (first (select table kvs limit order-by))))
 
 (defn exists?
   [table kvs]
@@ -58,9 +67,9 @@
 
 (defn update!!
   [table kvs where]
-  (with->
-    (update! kvs where)
-    (select (merge kvs where))))
+  (with-> table
+          (update! kvs where)
+          (select (merge kvs where))))
 
 (defn delete!
   [table where]
@@ -173,21 +182,21 @@
     :else (-to table)))
 
 (defn- -select
-  [table kvs limit]
+  [table kvs limit order-map]
   (let [table (-table-name table)
         [where on] (reduce
                      (fn [[where on] x]
                        (if (keyword? (val x))
                          [where (merge on x)]
                          [(merge where x) on]))
-                     [{} {}] kvs)
-        on-clause (-on on)
-        where-clause (-where-clause where)
-        where-clause (if (empty? on)
-                       where-clause
-                       (str on-clause " AND " where-clause))]
+                     [{} {}] kvs)]
     (format "SELECT * FROM %s WHERE %s"
             table
-            (if limit
-              (str where-clause " LIMIT " limit)
-              where-clause))))
+            (cond-> (-where-clause where)
+                    (not-empty on) (switch->> str (-on on) " AND ")
+                    limit (str " LIMIT " limit)
+                    order-map (str " ORDER BY "
+                                   (str (-> order-map first key -to)
+                                        " "
+                                        (if (-> order-map first val name str/upper-case (= "ASC"))
+                                          "ASC" "DESC")))))))

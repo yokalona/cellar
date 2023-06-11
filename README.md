@@ -82,3 +82,4 @@ Code notations of this project:
 2. Batch insert/delete
 3. Fields emitting fn's
 4. Add '?', '!', '*' support
+5. Add logs and tests
